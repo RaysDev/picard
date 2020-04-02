@@ -1,3 +1,26 @@
+# -*- coding: utf-8 -*-
+#
+# Picard, the next-generation MusicBrainz tagger
+#
+# Copyright (C) 2019-2020  Philipp Wolfer
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+
+from mutagen.asf import ASFByteArrayAttribute
+
 from test.picardtestcase import (
     PicardTestCase,
     create_fake_png,
@@ -52,6 +75,26 @@ class CommonAsfTests:
             self.assertEqual(raw_metadata['Replaygain_Album_Peak'][0], loaded_metadata['replaygain_album_peak'])
             self.assertEqual(1, len(raw_metadata['Replaygain_Album_Peak']))
             self.assertNotIn('REPLAYGAIN_ALBUM_PEAK', raw_metadata)
+
+        def _test_invalid_picture(self, invalid_picture_data):
+            png_data = create_fake_png(b'x')
+            tags = {
+                'WM/Picture': [
+                    ASFByteArrayAttribute(invalid_picture_data),
+                    ASFByteArrayAttribute(
+                        asf.pack_image("image/png", png_data)
+                    )
+                ]
+            }
+            save_raw(self.filename, tags)
+            metadata = load_metadata(self.filename)
+            self.assertEqual(1, len(metadata.images))
+            self.assertEqual(png_data, metadata.images[0].data)
+
+        @skipUnlessTestfile
+        def test_ignore_invalid_wm_picture(self):
+            # A picture that cannot be unpacked
+            self._test_invalid_picture(b'notapicture')
 
 
 class ASFTest(CommonAsfTests.AsfTestCase):

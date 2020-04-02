@@ -1,7 +1,19 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
-# Copyright (C) 2006 Lukáš Lalinský
+#
+# Copyright (C) 2006-2008, 2011-2014 Lukáš Lalinský
+# Copyright (C) 2009, 2018-2020 Philipp Wolfer
+# Copyright (C) 2012 Chad Wilson
+# Copyright (C) 2012-2013 Michael Wiencek
+# Copyright (C) 2013-2019 Laurent Monin
+# Copyright (C) 2015 Ohm Patel
+# Copyright (C) 2015 Sophist-UK
+# Copyright (C) 2016 Suhas
+# Copyright (C) 2016-2017 Wieland Hoffmann
+# Copyright (C) 2016-2018 Sambhav Kothari
+# Copyright (C) 2017 Ville Skyttä
+# Copyright (C) 2018 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -17,6 +29,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+
 from picard.version import (
     Version,
     VersionError,
@@ -28,7 +41,7 @@ PICARD_APP_NAME = "Picard"
 PICARD_DISPLAY_NAME = "MusicBrainz Picard"
 PICARD_APP_ID = "org.musicbrainz.Picard"
 PICARD_DESKTOP_NAME = PICARD_APP_ID + ".desktop"
-PICARD_VERSION = Version(2, 3, 0, 'rc', 1)
+PICARD_VERSION = Version(2, 3, 2, 'dev', 1)
 
 
 # optional build version
@@ -38,6 +51,7 @@ PICARD_BUILD_VERSION_STR = ""
 
 
 def version_to_string(version, short=False):
+    """Deprecated: Use picard.version.Version.to_string instead"""
     if len(version) != 5:
         raise VersionError("Length != 5")
     if not isinstance(version, Version):
@@ -65,6 +79,7 @@ api_versions = [
     "2.0",
     "2.1",
     "2.2",
+    "2.3",
 ]
 
 api_versions_tuple = [Version.from_string(v) for v in api_versions]

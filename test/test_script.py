@@ -1,3 +1,35 @@
+# -*- coding: utf-8 -*-
+#
+# Picard, the next-generation MusicBrainz tagger
+#
+# Copyright (C) 2007 Lukáš Lalinský
+# Copyright (C) 2010, 2014, 2018-2020 Philipp Wolfer
+# Copyright (C) 2012 Chad Wilson
+# Copyright (C) 2013 Michael Wiencek
+# Copyright (C) 2013, 2017-2020 Laurent Monin
+# Copyright (C) 2014, 2017 Sophist-UK
+# Copyright (C) 2016-2017 Sambhav Kothari
+# Copyright (C) 2017 Antonio Larrosa
+# Copyright (C) 2017-2018 Wieland Hoffmann
+# Copyright (C) 2018 virusMac
+# Copyright (C) 2020 Bob Swift
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+
+import copy
 import datetime
 from unittest.mock import MagicMock
 
@@ -8,12 +40,18 @@ from picard.cluster import Cluster
 from picard.const import DEFAULT_FILE_NAMING_FORMAT
 from picard.metadata import Metadata
 from picard.script import (
+    MULTI_VALUED_JOINER,
+    MultiValue,
     ScriptEndOfFile,
     ScriptError,
+    ScriptExpression,
+    ScriptFunction,
     ScriptParser,
+    ScriptRuntimeError,
     ScriptSyntaxError,
     ScriptUnknownFunction,
     register_script_function,
+    script_function,
 )
 
 
@@ -27,12 +65,12 @@ class _TestTimezone(datetime.tzinfo):
         self.dston = d - datetime.timedelta(days=d.weekday() + 1)
         d = datetime.datetime(dt.year, 11, 1)
         self.dstoff = d - datetime.timedelta(days=d.weekday() + 1)
-        if self.dston <=  dt.replace(tzinfo=None) < self.dstoff:
+        if self.dston <= dt.replace(tzinfo=None) < self.dstoff:
             return datetime.timedelta(hours=1)
         else:
             return datetime.timedelta(0)
 
-    def tzname(self,dt):
+    def tzname(self, dt):
         return "TZ Test"
 
 
@@ -59,10 +97,12 @@ class ScriptParserTest(PicardTestCase):
 
         self.parser = ScriptParser()
 
-        def func_noargstest(parser):
-            return ""
+        # ensure we start on clean registry
+        ScriptParser._cache = {}
+        self._backup_registry = copy.deepcopy(ScriptParser._function_registry)
 
-        register_script_function(func_noargstest, "noargstest")
+    def tearDown(self):
+        ScriptParser._function_registry = copy.deepcopy(self._backup_registry)
 
     def assertScriptResultEquals(self, script, expected, context=None, file=None):
         """Asserts that evaluating `script` returns `expected`.
@@ -78,6 +118,95 @@ class ScriptParserTest(PicardTestCase):
                          expected,
                          "'%s' evaluated to '%s', expected '%s'"
                          % (script, actual, expected))
+
+    def test_script_function_decorator_default(self):
+        # test default decorator and default prefix
+        @script_function()
+        def func_somefunc(parser):
+            return "x"
+        self.assertScriptResultEquals("$somefunc()", "x")
+
+    def test_script_function_decorator_no_prefix(self):
+        # function without prefix
+        @script_function()
+        def somefunc(parser):
+            return "x"
+        self.assertScriptResultEquals("$somefunc()", "x")
+
+    def test_script_function_decorator_arg(self):
+        # function with argument
+        @script_function()
+        def somefunc(parser, arg):
+            return arg
+        self.assertScriptResultEquals("$somefunc($title(x))", "X")
+        areg = r"^\d+:\d+:\$somefunc: Wrong number of arguments for \$somefunc: Expected exactly 1"
+        with self.assertRaisesRegex(ScriptError, areg):
+            self.parser.eval("$somefunc()")
+
+    def test_script_function_decorator_argcount(self):
+        # ignore argument count
+        @script_function(check_argcount=False)
+        def somefunc(parser, *arg):
+            return str(len(arg))
+        self.assertScriptResultEquals("$somefunc(a,b,c)", "3")
+
+    def test_script_function_decorator_altname(self):
+        # alternative name
+        @script_function(name="otherfunc")
+        def somefunc4(parser):
+            return "x"
+        self.assertScriptResultEquals("$otherfunc()", "x")
+        areg = r"^\d+:\d+:\$somefunc: Unknown function '\$somefunc'"
+        with self.assertRaisesRegex(ScriptError, areg):
+            self.parser.eval("$somefunc()")
+
+    def test_script_function_decorator_altprefix(self):
+        # alternative prefix
+        @script_function(prefix='theprefix_')
+        def theprefix_somefunc(parser):
+            return "x"
+        self.assertScriptResultEquals("$somefunc()", "x")
+
+    def test_script_function_decorator_eval_args(self):
+        # disable argument evaluation
+        @script_function(eval_args=False)
+        def somefunc(parser, arg):
+            return arg.eval(parser)
+        self.assertScriptResultEquals("$somefunc($title(x))", "X")
+
+    def test_unknown_function(self):
+        areg = r"^\d+:\d+:\$unknownfunction: Unknown function '\$unknownfunction'"
+        with self.assertRaisesRegex(ScriptError, areg):
+            self.parser.eval("$unknownfunction()")
+
+    def test_noname_function(self):
+        areg = r"^\d+:\d+:\$: Unknown function '\$'"
+        with self.assertRaisesRegex(ScriptError, areg):
+            self.parser.eval("$()")
+
+    def test_unexpected_end_of_script(self):
+        areg = r"^\d+:\d+: Unexpected end of script"
+        with self.assertRaisesRegex(ScriptError, areg):
+            self.parser.eval("$noop(")
+        with self.assertRaisesRegex(ScriptError, areg):
+            self.parser.eval("$")
+
+    def test_unexpected_character(self):
+        areg = r"^\d+:\d+: Unexpected character '\^'"
+        with self.assertRaisesRegex(ScriptError, areg):
+            self.parser.eval("$^noop()")
+
+    def test_scriptfunction_unknown(self):
+        parser = ScriptParser()
+        parser.parse('')
+        areg = r"^\d+:\d+:\$x: Unknown function '\$x'"
+        with self.assertRaisesRegex(ScriptError, areg):
+            ScriptFunction('x', '', parser)
+        areg = r"^\d+:\d+:\$noop: Unknown function '\$noop'"
+        with self.assertRaisesRegex(ScriptError, areg):
+            f = ScriptFunction('noop', '', parser)
+            del parser.functions['noop']
+            f.eval(parser)
 
     def test_cmd_noop(self):
         self.assertScriptResultEquals("$noop()", "")
@@ -162,6 +291,8 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$num(123,2)", "123")
         self.assertScriptResultEquals("$num(123,a)", "")
         self.assertScriptResultEquals("$num(a,2)", "00")
+        self.assertScriptResultEquals("$num(123,-1)", "123")
+        self.assertScriptResultEquals("$num(123,35)", "00000000000000000123")
 
     def test_cmd_or(self):
         self.assertScriptResultEquals("$or(,)", "")
@@ -205,6 +336,8 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$div(9,3)", "3")
         self.assertScriptResultEquals("$div(10,3)", "3")
         self.assertScriptResultEquals("$div(30,3,3)", "3")
+        self.assertScriptResultEquals("$div(30,0)", "")
+        self.assertScriptResultEquals("$div(30,a)", "")
 
     def test_cmd_mod(self):
         self.assertScriptResultEquals("$mod(9,3)", "0")
@@ -212,6 +345,7 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$mod(10,6,3)", "1")
         self.assertScriptResultEquals("$mod(a,3)", "")
         self.assertScriptResultEquals("$mod(10,a)", "")
+        self.assertScriptResultEquals("$mod(10,0)", "")
 
     def test_cmd_mul(self):
         self.assertScriptResultEquals("$mul(9,3)", "27")
@@ -261,6 +395,7 @@ class ScriptParserTest(PicardTestCase):
     def test_cmd_rsearch(self):
         self.assertScriptResultEquals(r"$rsearch(test \(disc 1\),\\\(disc \(\\d+\)\\\))", "1")
         self.assertScriptResultEquals(r"$rsearch(test \(disc 1\),\\\(disc \\d+\\\))", "(disc 1)")
+        self.assertScriptResultEquals(r"$rsearch(test,x)", "")
         self.assertScriptResultEquals(r'''$rsearch(test,[t)''', "")
 
     def test_arguments(self):
@@ -322,6 +457,8 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$firstwords(Abc Def Ghi,0)", "")
         self.assertScriptResultEquals("$firstwords(Abc Def Ghi,NaN)", "")
         self.assertScriptResultEquals("$firstwords(Abc Def Ghi,)", "")
+        self.assertScriptResultEquals("$firstwords(Abc Def Ghi,-2)", "Abc Def")
+        self.assertScriptResultEquals("$firstwords(Abc Def Ghi,-50)", "")
 
     def test_cmd_startswith(self):
         self.assertScriptResultEquals("$startswith(abc,a)", "1")
@@ -402,11 +539,17 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$title(Abc Def G)", "Abc Def G")
         self.assertScriptResultEquals("$title(abc def g)", "Abc Def G")
         self.assertScriptResultEquals("$title(#1abc 4def - g)", "#1abc 4def - G")
-        self.assertScriptResultEquals("$title(abcd \\(efg hi jkl mno\\))", "Abcd (Efg Hi Jkl Mno)")
+        self.assertScriptResultEquals(r"$title(abcd \(efg hi jkl mno\))", "Abcd (Efg Hi Jkl Mno)")
         self.assertScriptResultEquals("$title(...abcd)", "...Abcd")
         self.assertScriptResultEquals("$title(a)", "A")
         self.assertScriptResultEquals("$title(’a)", "’a")
         self.assertScriptResultEquals("$title('a)", "'a")
+        self.assertScriptResultEquals("$title(l'a)", "L'a")
+        self.assertScriptResultEquals("$title(2'a)", "2'A")
+        # Tests wrong number of arguments
+        areg = r"^\d+:\d+:\$title: Wrong number of arguments for \$title: Expected exactly 1, "
+        with self.assertRaisesRegex(ScriptError, areg):
+            self.parser.eval("$title()")
 
     def test_cmd_swapprefix(self):
         self.assertScriptResultEquals("$swapprefix(A stitch in time)", "stitch in time, A")
@@ -452,24 +595,28 @@ class ScriptParserTest(PicardTestCase):
         self.assertEqual(result, 'artist/\n\ntitle')
 
     def test_cmd_with_not_arguments(self):
+        def func_noargstest(parser):
+            return ""
+
+        register_script_function(func_noargstest, "noargstest")
         self.parser.eval("$noargstest()")
 
     def test_cmd_with_wrong_argcount_or(self):
         # $or() requires at least 2 arguments
-        areg = r"^Wrong number of arguments for \$or: Expected at least 2, "
+        areg = r"^\d+:\d+:\$or: Wrong number of arguments for \$or: Expected at least 2, "
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval('$or(0)')
 
     def test_cmd_with_wrong_argcount_eq(self):
         # $eq() requires exactly 2 arguments
-        areg = r"^Wrong number of arguments for \$eq: Expected exactly 2, "
+        areg = r"^\d+:\d+:\$eq: Wrong number of arguments for \$eq: Expected exactly 2, "
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval('$eq(0)')
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval('$eq(0,0,0)')
 
     def test_cmd_with_wrong_argcount_if(self):
-        areg = r"^Wrong number of arguments for \$if: Expected between 2 and 3, "
+        areg = r"^\d+:\d+:\$if: Wrong number of arguments for \$if: Expected between 2 and 3, "
         # $if() requires 2 or 3 arguments
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval('$if(1)')
@@ -538,6 +685,8 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$inmulti(%foo%,A; Second,:)", "1", context)
         self.assertScriptResultEquals("$inmulti(%foo%,B; Third,:)", "1", context)
         self.assertScriptResultEquals("$inmulti(%foo%,C,:)", "1", context)
+        # Test no separator
+        self.assertScriptResultEquals("$inmulti(%foo%,First:A; Second:B; Third:C,)", "1", context)
 
         # Test with multi-values
         context["foo"] = ["First:A", "Second:B", "Third:C"]
@@ -561,6 +710,8 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$inmulti(%foo%,A; Second,:)", "1", context)
         self.assertScriptResultEquals("$inmulti(%foo%,B; Third,:)", "1", context)
         self.assertScriptResultEquals("$inmulti(%foo%,C,:)", "1", context)
+        # Test no separator
+        self.assertScriptResultEquals("$inmulti(%foo%,First:A; Second:B; Third:C,)", "1", context)
 
     def test_cmd_lenmulti(self):
         context = Metadata()
@@ -581,6 +732,20 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$lenmulti(%foo%,:)", "4", context)
         self.assertScriptResultEquals("$lenmulti(%bar%,:)", "4", context)
         self.assertScriptResultEquals("$lenmulti(%foo%.,:)", "4", context)
+        # Test no separator
+        self.assertScriptResultEquals("$lenmulti(%foo%,)", "1", context)
+        self.assertScriptResultEquals("$lenmulti(%bar%,)", "1", context)
+        # Test blank name
+        context["baz"] = ""
+        self.assertScriptResultEquals("$lenmulti(%baz%)", "0", context)
+        self.assertScriptResultEquals("$lenmulti(%baz%,:)", "0", context)
+        # Test empty multi-value
+        context["baz"] = []
+        self.assertScriptResultEquals("$lenmulti(%baz%)", "0", context)
+        self.assertScriptResultEquals("$lenmulti(%baz%,:)", "0", context)
+        # Test missing name
+        self.assertScriptResultEquals("$lenmulti(,)", "0", context)
+        self.assertScriptResultEquals("$lenmulti(,:)", "0", context)
 
     def test_cmd_performer(self):
         context = Metadata()
@@ -656,13 +821,14 @@ class ScriptParserTest(PicardTestCase):
                                msg="Functions with required keyword-only parameters are not supported"):
             register_script_function(func)
 
-    def test_optional_kwonly_parameters(self):
+    @staticmethod
+    def test_optional_kwonly_parameters():
         def func(a, *, optional_kwarg=1):
             pass
         register_script_function(func)
 
     def test_char_escape(self):
-        self.assertScriptResultEquals("\\n\\t\\$\\%\\(\\)\\,\\\\", "\n\t$%(),\\")
+        self.assertScriptResultEquals(r"\n\t\$\%\(\)\,\\", "\n\t$%(),\\")
 
     def test_raise_unknown_function(self):
         self.assertRaises(ScriptUnknownFunction, self.parser.eval, '$unknownfn()')
@@ -674,7 +840,7 @@ class ScriptParserTest(PicardTestCase):
     def test_raise_syntax_error(self):
         self.assertRaises(ScriptSyntaxError, self.parser.eval, '%var()%')
         self.assertRaises(ScriptSyntaxError, self.parser.eval, '$noop(()')
-        self.assertRaises(ScriptSyntaxError, self.parser.eval, '\\x')
+        self.assertRaises(ScriptSyntaxError, self.parser.eval, r'\x')
 
     def test_cmd_find(self):
         context = Metadata()
@@ -687,30 +853,30 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$find(%bar%,%baz%)", "9", context)
         self.assertScriptResultEquals("$find(%foo%,%bar%)", "0", context)
         self.assertScriptResultEquals("$find(%bar%,%foo%)", "0", context)
-        self.assertScriptResultEquals("$find(%foo%,%err%)", "-1", context)
+        self.assertScriptResultEquals("$find(%foo%,%err%)", "", context)
         # Tests with static input
         self.assertScriptResultEquals("$find(abcdef,c)", "2", context)
         self.assertScriptResultEquals("$find(abcdef,cd)", "2", context)
-        self.assertScriptResultEquals("$find(abcdef,g)", "-1", context)
+        self.assertScriptResultEquals("$find(abcdef,g)", "", context)
         # Tests ends of string
         self.assertScriptResultEquals("$find(abcdef,a)", "0", context)
         self.assertScriptResultEquals("$find(abcdef,ab)", "0", context)
         self.assertScriptResultEquals("$find(abcdef,f)", "5", context)
         self.assertScriptResultEquals("$find(abcdef,ef)", "4", context)
         # Tests case sensitivity
-        self.assertScriptResultEquals("$find(abcdef,C)", "-1", context)
+        self.assertScriptResultEquals("$find(abcdef,C)", "", context)
         # Tests no characters processed as wildcards
-        self.assertScriptResultEquals("$find(abcdef,.f)", "-1", context)
-        self.assertScriptResultEquals("$find(abcdef,?f)", "-1", context)
-        self.assertScriptResultEquals("$find(abcdef,*f)", "-1", context)
-        self.assertScriptResultEquals("$find(abc.ef,cde)", "-1", context)
-        self.assertScriptResultEquals("$find(abc?ef,cde)", "-1", context)
-        self.assertScriptResultEquals("$find(abc*ef,cde)", "-1", context)
+        self.assertScriptResultEquals("$find(abcdef,.f)", "", context)
+        self.assertScriptResultEquals("$find(abcdef,?f)", "", context)
+        self.assertScriptResultEquals("$find(abcdef,*f)", "", context)
+        self.assertScriptResultEquals("$find(abc.ef,cde)", "", context)
+        self.assertScriptResultEquals("$find(abc?ef,cde)", "", context)
+        self.assertScriptResultEquals("$find(abc*ef,cde)", "", context)
         # Tests missing inputs
-        self.assertScriptResultEquals("$find(,c)", "-1", context)
+        self.assertScriptResultEquals("$find(,c)", "", context)
         self.assertScriptResultEquals("$find(abcdef,)", "0", context)
         # Tests wrong number of arguments
-        areg = r"^Wrong number of arguments for \$find: Expected exactly 2, "
+        areg = r"^\d+:\d+:\$find: Wrong number of arguments for \$find: Expected exactly 2, "
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval("$find(abcdef)")
 
@@ -724,7 +890,7 @@ class ScriptParserTest(PicardTestCase):
         # Tests with static input
         self.assertScriptResultEquals("$reverse(One; Two; Three)", "eerhT ;owT ;enO", context)
         # Tests with missing input
-        areg = r"^Wrong number of arguments for \$reverse: Expected exactly 1, "
+        areg = r"^\d+:\d+:\$reverse: Wrong number of arguments for \$reverse: Expected exactly 1, "
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval("$reverse()")
 
@@ -766,7 +932,7 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$substr(One; Two; Three,10,)", "Three", context)
         self.assertScriptResultEquals("$substr(One; Two; Three,,)", "One; Two; Three", context)
         # Tests with missing input
-        areg = r"^Wrong number of arguments for \$substr: Expected exactly 3, "
+        areg = r"^\d+:\d+:\$substr: Wrong number of arguments for \$substr: Expected exactly 3, "
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval("$substr()")
         with self.assertRaisesRegex(ScriptError, areg):
@@ -802,7 +968,7 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$getmulti(,0)", "", context)
         self.assertScriptResultEquals("$getmulti(First:A; Second:B; Third:C,)", "", context)
         # Tests with invalid number of arguments
-        areg = r"^Wrong number of arguments for \$getmulti: Expected between 2 and 3, "
+        areg = r"^\d+:\d+:\$getmulti: Wrong number of arguments for \$getmulti: Expected between 2 and 3, "
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval("$getmulti()")
         with self.assertRaisesRegex(ScriptError, areg):
@@ -827,14 +993,14 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$foreach(First:A; Second:B; Third:C,$set(output,%output% %_loop_count%=%_loop_value%))%output%", loop_output, context)
         # Tests with missing inputs
         context["output"] = "Output:"
-        self.assertScriptResultEquals("$foreach(,$set(output,%output% %_loop_count%=%_loop_value%))%output%", "Output: 1=", context)
+        self.assertScriptResultEquals("$foreach(,$set(output,%output% %_loop_count%=%_loop_value%))%output%", "Output:", context)
         context["output"] = "Output:"
         self.assertScriptResultEquals("$foreach(First:A; Second:B; Third:C,)%output%", "Output:", context)
         # Tests with separator override
         context["output"] = "Output:"
         self.assertScriptResultEquals("$foreach(First:A; Second:B; Third:C,$set(output,%output% %_loop_count%=%_loop_value%),:)%output%", alternate_output, context)
         # Tests with invalid number of arguments
-        areg = r"^Wrong number of arguments for \$foreach: Expected between 2 and 3, "
+        areg = r"^\d+:\d+:\$foreach: Wrong number of arguments for \$foreach: Expected between 2 and 3, "
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval("$foreach()")
         with self.assertRaisesRegex(ScriptError, areg):
@@ -866,7 +1032,7 @@ class ScriptParserTest(PicardTestCase):
         context["output"] = "Output:"
         self.assertScriptResultEquals("$while(,$set(output,%output% %_loop_count%))%output%", "Output:", context)
         # Tests with invalid number of arguments
-        areg = r"^Wrong number of arguments for \$while: Expected exactly 2, "
+        areg = r"^\d+:\d+:\$while: Wrong number of arguments for \$while: Expected exactly 2, "
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval("$while()")
         with self.assertRaisesRegex(ScriptError, areg):
@@ -887,12 +1053,12 @@ class ScriptParserTest(PicardTestCase):
         # Tests with static inputs
         self.assertScriptResultEquals("$map(First:A; Second:B; Third:C,$upper(%_loop_count%=%_loop_value%))", loop_output, context)
         # Tests with missing inputs
-        self.assertScriptResultEquals("$map(,$upper(%_loop_count%=%_loop_value%))", "1=", context)
+        self.assertScriptResultEquals("$map(,$upper(%_loop_count%=%_loop_value%))", "", context)
         self.assertScriptResultEquals("$map(First:A; Second:B; Third:C,)", "; ; ", context)
         # Tests with separator override
         self.assertScriptResultEquals("$map(First:A; Second:B; Third:C,$upper(%_loop_count%=%_loop_value%),:)", alternate_output, context)
         # Tests with invalid number of arguments
-        areg = r"^Wrong number of arguments for \$map: Expected between 2 and 3, "
+        areg = r"^\d+:\d+:\$map: Wrong number of arguments for \$map: Expected between 2 and 3, "
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval("$map()")
         with self.assertRaisesRegex(ScriptError, areg):
@@ -919,7 +1085,7 @@ class ScriptParserTest(PicardTestCase):
         # Tests with separator override
         self.assertScriptResultEquals("$join(First:A; Second:B; Third:C, ==> ,:)", alternate_output, context)
         # Tests with invalid number of arguments
-        areg = r"^Wrong number of arguments for \$join: Expected between 2 and 3, "
+        areg = r"^\d+:\d+:\$join: Wrong number of arguments for \$join: Expected between 2 and 3, "
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval("$join()")
         with self.assertRaisesRegex(ScriptError, areg):
@@ -964,10 +1130,14 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$slice(First:A; Second:B; Third:C,,)", output_0_3, context)
         # Tests with invalid inputs (end < start)
         self.assertScriptResultEquals("$slice(First:A; Second:B; Third:C,1,0)", "", context)
+        # Tests with invalid inputs (non-numeric end and/or start)
+        self.assertScriptResultEquals("$slice(First:A; Second:B; Third:C,a,1)", output_0_1, context)
+        self.assertScriptResultEquals("$slice(First:A; Second:B; Third:C,1,b)", output_1_3, context)
+        self.assertScriptResultEquals("$slice(First:A; Second:B; Third:C,a,b)", output_0_3, context)
         # Tests with separator override
         self.assertScriptResultEquals("$slice(First:A; Second:B; Third:C,1,3,:)", alternate_output, context)
         # Tests with invalid number of arguments
-        areg = r"^Wrong number of arguments for \$slice: Expected between 3 and 4, "
+        areg = r"^\d+:\d+:\$slice: Wrong number of arguments for \$slice: Expected between 3 and 4, "
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval("$slice()")
         with self.assertRaisesRegex(ScriptError, areg):
@@ -978,7 +1148,7 @@ class ScriptParserTest(PicardTestCase):
             self.parser.eval("$slice(abc; def),0,1,:,extra")
 
     def test_cmd_datetime(self):
-        # Save origninal datetime object and substitute one returning
+        # Save original datetime object and substitute one returning
         # a fixed now() value for testing.
         original_datetime = datetime.datetime
         datetime.datetime = _DateTime
@@ -990,19 +1160,194 @@ class ScriptParserTest(PicardTestCase):
             self.assertScriptResultEquals("$datetime(%foo%)", "20200102123456.000789", context)
             self.assertScriptResultEquals("$datetime($initials())", "2020-01-02 12:34:56", context)
             # Tests with static input
-            self.assertScriptResultEquals("$datetime(\%Y\%m\%d\%H\%M\%S.\%f)", "20200102123456.000789", context)
+            self.assertScriptResultEquals(r"$datetime(\%Y\%m\%d\%H\%M\%S.\%f)", "20200102123456.000789", context)
             # Tests with timezones
-            self.assertScriptResultEquals("$datetime(\%H\%M\%S \%z \%Z)", "123456 +0200 TZ Test", context)
+            self.assertScriptResultEquals(r"$datetime(\%H\%M\%S \%z \%Z)", "123456 +0200 TZ Test", context)
             # Tests with missing input
             self.assertScriptResultEquals("$datetime()", "2020-01-02 12:34:56", context)
             # Tests with invalid format
             self.assertScriptResultEquals("$datetime(xxx)", "xxx", context)
             # Tests with invalid number of arguments
-            areg = r"^Wrong number of arguments for \$datetime: Expected between 0 and 1, "
+            areg = r"^\d+:\d+:\$datetime: Wrong number of arguments for \$datetime: Expected between 0 and 1, "
             with self.assertRaisesRegex(ScriptError, areg):
                 self.parser.eval("$datetime(abc,def)")
-        except (AssertionError, ValueError, IndexError) as err:
-            raise err
         finally:
-            # Restore origninal datetime object
+            # Restore original datetime object
             datetime.datetime = original_datetime
+
+    def test_cmd_datetime_platform_dependent(self):
+        # Platform dependent testing because different platforms (both os and Python version)
+        # support some format arguments differently.
+        possible_tests = (
+            '%',    # Hanging % at end of format
+            '%-d',  # Non zero-padded day
+            '%-m',  # Non zero-padded month
+            '%3Y',  # Length specifier shorter than string
+        )
+        tests_to_run = []
+        # Get list of tests for unsupported format codes
+        for test_case in possible_tests:
+            try:
+                datetime.datetime.now().strftime(test_case)
+            except ValueError:
+                tests_to_run.append(test_case)
+        if not tests_to_run:
+            self.skipTest('datetime module supports all test cases')
+        # Save original datetime object and substitute one returning
+        # a fixed now() value for testing.
+        original_datetime = datetime.datetime
+        datetime.datetime = _DateTime
+
+        try:
+            context = Metadata()
+            areg = r"^\d+:\d+:\$datetime: Unsupported format code"
+            # Tests with invalid format code (platform dependent tests)
+            for test_case in tests_to_run:
+                with self.assertRaisesRegex(ScriptRuntimeError, areg):
+                    self.parser.eval(r'$datetime(\{0})'.format(test_case))
+        finally:
+            # Restore original datetime object
+            datetime.datetime = original_datetime
+
+    def test_scriptruntimeerror(self):
+        # Platform dependent testing because different platforms (both os and Python version)
+        # support some format arguments differently.  Use $datetime function to generate exceptions.
+        possible_tests = (
+            '%',    # Hanging % at end of format
+            '%-d',  # Non zero-padded day
+            '%-m',  # Non zero-padded month
+            '%3Y',  # Length specifier shorter than string
+        )
+        test_to_run = ''
+        # Get list of tests for unsupported format codes
+        for test_case in possible_tests:
+            try:
+                datetime.datetime.now().strftime(test_case)
+            except ValueError:
+                test_to_run = test_case
+                break
+        if not test_to_run:
+            self.skipTest('no test found to generate ScriptRuntimeError')
+        # Save original datetime object and substitute one returning
+        # a fixed now() value for testing.
+        original_datetime = datetime.datetime
+        datetime.datetime = _DateTime
+
+        try:
+            context = Metadata()
+            # Test that the correct position number is passed
+            areg = r"^\d+:7:\$datetime: Unsupported format code"
+            with self.assertRaisesRegex(ScriptRuntimeError, areg):
+                self.parser.eval(r'$noop()$datetime(\{0})'.format(test_to_run))
+            # Test that the function stack is returning the correct name (nested functions)
+            areg = r"^\d+:\d+:\$datetime: Unsupported format code"
+            with self.assertRaisesRegex(ScriptRuntimeError, areg):
+                self.parser.eval(r'$set(foo,$datetime($if(,,\{0})))'.format(test_to_run))
+            # Test that the correct line number is passed
+            areg = r"^2:\d+:\$datetime: Unsupported format code"
+            with self.assertRaisesRegex(ScriptRuntimeError, areg):
+                self.parser.eval('$noop(\n)$datetime($if(,,\\{0})))'.format(test_to_run))
+        finally:
+            # Restore original datetime object
+            datetime.datetime = original_datetime
+
+    def test_multivalue_1(self):
+        self.parser.context = Metadata({'foo': ':', 'bar': 'x:yz', 'empty': ''})
+        expr = self.parser.parse('a:bc; d:ef')
+        self.assertIsInstance(expr, ScriptExpression)
+
+        mv = MultiValue(self.parser, expr, MULTI_VALUED_JOINER)
+        self.assertEqual(mv._multi, ['a:bc', 'd:ef'])
+        self.assertEqual(mv.separator, MULTI_VALUED_JOINER)
+        self.assertEqual(len(mv), 2)
+        del mv[0]
+        self.assertEqual(len(mv), 1)
+        mv.insert(0, 'x')
+        self.assertEqual(mv[0], 'x')
+        mv[0] = 'y'
+        self.assertEqual(mv[0], 'y')
+        self.assertEqual(str(mv), 'y; d:ef')
+        self.assertTrue(repr(mv).startswith('MultiValue('))
+
+        mv = MultiValue(self.parser, expr, ':')
+        self.assertEqual(mv._multi, ['a', 'bc; d', 'ef'])
+        self.assertEqual(mv.separator, ':')
+
+        expr = self.parser.parse('a:bc; d:ef')
+        self.assertIsInstance(expr, ScriptExpression)
+        sep = self.parser.parse('%foo%')
+        self.assertIsInstance(sep, ScriptExpression)
+        mv = MultiValue(self.parser, expr, sep)
+        self.assertEqual(mv._multi, ['a', 'bc; d', 'ef'])
+
+        expr = self.parser.parse('%bar%; d:ef')
+        self.assertIsInstance(expr, ScriptExpression)
+        sep = self.parser.parse('%foo%')
+        self.assertIsInstance(sep, ScriptExpression)
+        mv = MultiValue(self.parser, expr, sep)
+        self.assertEqual(mv._multi, ['x', 'yz; d', 'ef'])
+
+        expr = self.parser.parse('%bar%')
+        self.assertIsInstance(expr, ScriptExpression)
+        mv = MultiValue(self.parser, expr, MULTI_VALUED_JOINER)
+        self.assertEqual(mv._multi, ['x:yz'])
+
+        expr = self.parser.parse('%bar%; d:ef')
+        self.assertIsInstance(expr, ScriptExpression)
+        sep = self.parser.parse('%empty%')
+        self.assertIsInstance(sep, ScriptExpression)
+        mv = MultiValue(self.parser, expr, sep)
+        self.assertEqual(mv._multi, ['x:yz; d:ef'])
+
+        expr = self.parser.parse('')
+        self.assertIsInstance(expr, ScriptExpression)
+        mv = MultiValue(self.parser, expr, MULTI_VALUED_JOINER)
+        self.assertEqual(mv._multi, [])
+
+    def test_cmd_sortmulti(self):
+        context = Metadata()
+        context["foo"] = ['B', 'D', 'E', 'A', 'C']
+        context["bar"] = ['B:AB', 'D:C', 'E:D', 'A:A', 'C:X']
+        context['baz'] = "B; D; E; A; C"
+        # Tests with context
+        self.assertScriptResultEquals("$sortmulti(%foo%)", "A; B; C; D; E", context)
+        self.assertScriptResultEquals("$sortmulti(%bar%)", "A:A; B:AB; C:X; D:C; E:D", context)
+        self.assertScriptResultEquals("$sortmulti(%baz%)", "B; D; E; A; C", context)
+        # Tests with static inputs
+        self.assertScriptResultEquals("$sortmulti(B; D; E; A; C)", "A; B; C; D; E", context)
+        self.assertScriptResultEquals("$sortmulti(B:AB; D:C; E:D; A:A; C:X)", "A:A; B:AB; C:X; D:C; E:D", context)
+        # Tests with separator override
+        self.assertScriptResultEquals("$sortmulti(B:AB; D:C; E:D; A:A; C:X,:)", "A; C:AB; D:B:C; E:D; A:X", context)
+        # Tests with missing inputs
+        self.assertScriptResultEquals("$sortmulti(,)", "", context)
+        self.assertScriptResultEquals("$sortmulti(,:)", "", context)
+        # Tests with invalid number of arguments
+        areg = r"^\d+:\d+:\$sortmulti: Wrong number of arguments for \$sortmulti: Expected between 1 and 2, "
+        with self.assertRaisesRegex(ScriptError, areg):
+            self.parser.eval("$sortmulti()")
+        with self.assertRaisesRegex(ScriptError, areg):
+            self.parser.eval("$sortmulti(B:AB; D:C; E:D; A:A; C:X,:,extra)")
+
+    def test_cmd_reversemulti(self):
+        context = Metadata()
+        context["foo"] = ['B', 'D', 'E', 'A', 'C']
+        context["bar"] = ['B:AB', 'D:C', 'E:D', 'A:A', 'C:X']
+        context['baz'] = "B; D; E; A; C"
+        # Tests with context
+        self.assertScriptResultEquals("$reversemulti(%foo%)", "C; A; E; D; B", context)
+        self.assertScriptResultEquals("$reversemulti(%bar%)", "C:X; A:A; E:D; D:C; B:AB", context)
+        self.assertScriptResultEquals("$reversemulti(%baz%)", "B; D; E; A; C", context)
+        # Tests with static inputs
+        self.assertScriptResultEquals("$reversemulti(B; D; E; A; C)", "C; A; E; D; B", context)
+        self.assertScriptResultEquals("$reversemulti(B:AB; D:C; E:D; A:A; C:X)", "C:X; A:A; E:D; D:C; B:AB", context)
+        # Tests with separator override
+        self.assertScriptResultEquals("$reversemulti(B:AB; D:C; E:D; A:A; C:X,:)", "X:A; C:D; A:C; E:AB; D:B", context)
+        # Tests with missing inputs
+        self.assertScriptResultEquals("$reversemulti(,)", "", context)
+        self.assertScriptResultEquals("$reversemulti(,:)", "", context)
+        # Tests with invalid number of arguments
+        areg = r"^\d+:\d+:\$reversemulti: Wrong number of arguments for \$reversemulti: Expected between 1 and 2, "
+        with self.assertRaisesRegex(ScriptError, areg):
+            self.parser.eval("$reversemulti()")
+        with self.assertRaisesRegex(ScriptError, areg):
+            self.parser.eval("$reversemulti(B:AB; D:C; E:D; A:A; C:X,:,extra)")

@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
+#
 # Copyright (C) 2007 Lukáš Lalinský
 # Copyright (C) 2014 Shadab Zafar
 # Copyright (C) 2015-2019 Laurent Monin
+# Copyright (C) 2019 Wieland Hoffmann
+# Copyright (C) 2019-2020 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -19,6 +22,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+
 from functools import partial
 import imp
 import importlib
@@ -31,11 +35,7 @@ import zipimport
 
 from PyQt5 import QtCore
 
-from picard import (
-    VersionError,
-    log,
-    version_to_string,
-)
+from picard import log
 from picard.const import (
     PLUGINS_API,
     USER_PLUGIN_DIR,
@@ -47,7 +47,10 @@ from picard.plugin import (
     _unregister_module_extensions,
 )
 import picard.plugins
-from picard.version import Version
+from picard.version import (
+    Version,
+    VersionError,
+)
 
 
 _SUFFIXES = tuple(importlib.machinery.all_suffixes())
@@ -272,7 +275,7 @@ class PluginManager(QtCore.QObject):
                 log.debug("Loading plugin %r version %s, compatible with API: %s",
                           plugin.name,
                           plugin.version,
-                          ", ".join([version_to_string(v, short=True) for v in
+                          ", ".join([v.to_string(short=True) for v in
                                      sorted(compatible_versions)]))
                 plugin.compatible = True
                 setattr(picard.plugins, name, plugin_module)

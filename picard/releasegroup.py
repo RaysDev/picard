@@ -1,7 +1,14 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
-# Copyright (C) 2012 Michael Wiencek
+#
+# Copyright (C) 2012-2013 Michael Wiencek
+# Copyright (C) 2013, 2018-2020 Laurent Monin
+# Copyright (C) 2014, 2017 Sophist-UK
+# Copyright (C) 2017 Wieland Hoffmann
+# Copyright (C) 2017-2018 Sambhav Kothari
+# Copyright (C) 2018 Vishal Choudhary
+# Copyright (C) 2019 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -17,6 +24,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+
 from collections import defaultdict
 from functools import partial
 from itertools import combinations
@@ -30,7 +38,10 @@ from picard.mbjson import (
     media_formats_from_node,
 )
 from picard.metadata import Metadata
-from picard.util import uniqify
+from picard.util import (
+    limited_join,
+    uniqify,
+)
 
 
 class ReleaseGroup(DataObject):
@@ -86,8 +97,8 @@ class ReleaseGroup(DataObject):
             release = {
                 "id":      node['id'],
                 "year":    node['date'][:4] if "date" in node else "????",
-                "country": "+".join(countries) if countries
-                           else node.get('country', '') or "??",
+                "country": limited_join(countries, 10, '+', '…') if countries
+                else node.get('country', '') or "??",
                 "format":  media_formats_from_node(node['media']),
                 "label":  ", ".join([' '.join(x.split(' ')[:2]) for x in set(labels)]),
                 "catnum": ", ".join(set(catnums)),

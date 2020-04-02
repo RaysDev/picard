@@ -1,8 +1,28 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
+#
 # Copyright (C) 2004 Robert Kaye
-# Copyright (C) 2006 Lukáš Lalinský
+# Copyright (C) 2006-2009, 2011-2013, 2017 Lukáš Lalinský
+# Copyright (C) 2007-2011, 2015, 2018-2020 Philipp Wolfer
+# Copyright (C) 2008 Gary van der Merwe
+# Copyright (C) 2008-2009 Nikolai Prokoschenko
+# Copyright (C) 2009 Carlin Mangar
+# Copyright (C) 2009 David Hilton
+# Copyright (C) 2011-2014 Michael Wiencek
+# Copyright (C) 2012 Erik Wasser
+# Copyright (C) 2012 Johannes Weißl
+# Copyright (C) 2012 noobie
+# Copyright (C) 2012-2014 Wieland Hoffmann
+# Copyright (C) 2013 Calvin Walton
+# Copyright (C) 2013-2014 Ionuț Ciocîrlan
+# Copyright (C) 2013-2014, 2017 Sophist-UK
+# Copyright (C) 2013-2014, 2017-2019 Laurent Monin
+# Copyright (C) 2016 Rahul Raturi
+# Copyright (C) 2016 Ville Skyttä
+# Copyright (C) 2016-2018 Sambhav Kothari
+# Copyright (C) 2017-2018 Antonio Larrosa
+# Copyright (C) 2019 Joel Lintunen
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -17,6 +37,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 
 from collections import defaultdict
 import fnmatch
@@ -119,6 +140,9 @@ class File(QtCore.QObject, Item):
         self.lookup_task = None
         self.item = None
 
+        self.acoustid_fingerprint = None
+        self.acoustid_length = 0
+
     def __repr__(self):
         return '<%s %r>' % (type(self).__name__, self.base_filename)
 
@@ -163,6 +187,11 @@ class File(QtCore.QObject, Item):
             self.error = None
             self.state = self.NORMAL
             self._copy_loaded_metadata(result)
+        # use cached fingerprint from file metadata
+        if not config.setting["ignore_existing_acoustid_fingerprints"]:
+            fingerprints = self.metadata.getall('acoustid_fingerprint')
+            if fingerprints:
+                self.set_acoustid_fingerprint(fingerprints[0])
         run_file_post_load_processors(self)
         self.update()
         callback(self)
@@ -524,6 +553,17 @@ class File(QtCore.QObject, Item):
             if self.parent:
                 self.parent.remove_file(self)
             self.parent = parent
+            self.acoustid_update()
+
+    def set_acoustid_fingerprint(self, fingerprint, length=None):
+        if not fingerprint:
+            self.acoustid_fingerprint = None
+            self.acoustid_length = 0
+            self.tagger.acoustidmanager.remove(self)
+        elif fingerprint != self.acoustid_fingerprint:
+            self.acoustid_fingerprint = fingerprint
+            self.acoustid_length = length or self.metadata.length // 1000
+            self.tagger.acoustidmanager.add(self, None)
             self.acoustid_update()
 
     def acoustid_update(self):

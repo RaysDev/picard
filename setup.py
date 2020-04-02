@@ -1,5 +1,41 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+#
+# Picard, the next-generation MusicBrainz tagger
+#
+# Copyright (C) 2006-2008, 2011-2014, 2017 Lukáš Lalinský
+# Copyright (C) 2007 Santiago M. Mola
+# Copyright (C) 2008 Robert Kaye
+# Copyright (C) 2008-2009, 2018-2020 Philipp Wolfer
+# Copyright (C) 2009 Carlin Mangar
+# Copyright (C) 2011-2012, 2014, 2016-2018 Wieland Hoffmann
+# Copyright (C) 2011-2014 Michael Wiencek
+# Copyright (C) 2012, 2017 Frederik “Freso” S. Olesen
+# Copyright (C) 2013-2014 Johannes Dewender
+# Copyright (C) 2013-2015, 2017-2019 Laurent Monin
+# Copyright (C) 2014, 2017 Sophist-UK
+# Copyright (C) 2016 Rahul Raturi
+# Copyright (C) 2016-2017 Ville Skyttä
+# Copyright (C) 2016-2018 Sambhav Kothari
+# Copyright (C) 2018 Abhinav Ohri
+# Copyright (C) 2018 Kartik Ohri
+# Copyright (C) 2018 virusMac
+# Copyright (C) 2019 Kurt Mosiejczuk
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 
 import datetime
 from distutils import log
@@ -245,7 +281,7 @@ class picard_build(build):
             generate_file('win-version-info.txt.in', 'win-version-info.txt', {**args, **version_args})
 
             default_publisher = 'CN=Metabrainz Foundation Inc., O=Metabrainz Foundation Inc., L=San Luis Obispo, S=California, C=US'
-            store_version = (PICARD_VERSION.major, PICARD_VERSION.minor, PICARD_VERSION.patch * 100000 + self.build_number, 0)
+            store_version = (PICARD_VERSION.major, PICARD_VERSION.minor, PICARD_VERSION.patch * 10000 + self.build_number, 0)
             generate_file('appxmanifest.xml.in', 'appxmanifest.xml', {
                 'app-id': "MetaBrainzFoundationInc." + PICARD_APP_ID,
                 'display-name': PICARD_DISPLAY_NAME,

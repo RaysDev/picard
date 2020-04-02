@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
-# Copyright (C) 2017 Sambhav Kothari
+#
+# Copyright (C) 2017 David Mandelberg
+# Copyright (C) 2017-2018 Sambhav Kothari
+# Copyright (C) 2017-2019 Laurent Monin
+# Copyright (C) 2018-2020 Philipp Wolfer
+# Copyright (C) 2019 Michael Wiencek
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -16,6 +21,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 
 import re
 
@@ -462,6 +468,14 @@ def release_to_metadata(node, m, album=None):
                 m['~releaselanguage'] = value['language']
             if 'script' in value:
                 m['script'] = value['script']
+    m['~releasecountries'] = release_countries = countries_from_node(node)
+    # The MB web service returns the first release country in the country tag.
+    # If the user has configured preferred release countries, use the first one
+    # if it is one in the complete list of release countries.
+    for country in config.setting["preferred_release_countries"]:
+        if country in release_countries:
+            m['releasecountry'] = country
+            break
     add_genres_from_node(node, album)
 
 

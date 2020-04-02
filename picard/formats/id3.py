@@ -1,7 +1,21 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
-# Copyright (C) 2006-2007 Lukáš Lalinský
+#
+# Copyright (C) 2006-2009, 2011-2012 Lukáš Lalinský
+# Copyright (C) 2008-2011, 2014, 2018-2020 Philipp Wolfer
+# Copyright (C) 2009 Carlin Mangar
+# Copyright (C) 2011-2012 Johannes Weißl
+# Copyright (C) 2011-2014 Michael Wiencek
+# Copyright (C) 2011-2014 Wieland Hoffmann
+# Copyright (C) 2013 Calvin Walton
+# Copyright (C) 2013-2014, 2017-2019 Laurent Monin
+# Copyright (C) 2013-2015, 2017 Sophist-UK
+# Copyright (C) 2015 Frederik “Freso” S. Olesen
+# Copyright (C) 2016 Christoph Reiter
+# Copyright (C) 2016-2018 Sambhav Kothari
+# Copyright (C) 2017 tungol
+# Copyright (C) 2019 Zenara Daley
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -16,6 +30,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 
 from collections import defaultdict
 import re
@@ -92,6 +107,14 @@ def image_type_as_id3_num(texttype):
 
 def types_from_id3(id3type):
     return [image_type_from_id3_num(id3type)]
+
+
+def _remove_people_with_role(tags, frames, role):
+    for frame in tags.values():
+        if frame.FrameID in frames:
+            for people in list(frame.people):
+                if people[0] == role:
+                    frame.people.remove(people)
 
 
 class ID3File(File):
@@ -404,6 +427,7 @@ class ID3File(File):
         for name, values in metadata.rawitems():
             values = [id3text(v, encoding) for v in values]
             name = id3text(name, encoding)
+            name_lower = name.lower()
 
             if not self.supports_tag(name):
                 continue
@@ -481,11 +505,11 @@ class ID3File(File):
                         tags.delall('XSOP')
                     elif frameid == 'TSO2':
                         tags.delall('TXXX:ALBUMARTISTSORT')
-            elif name in self.__rtranslate_freetext_ci:
-                if name in self.__casemap:
-                    description = self.__casemap[name]
+            elif name_lower in self.__rtranslate_freetext_ci:
+                if name_lower in self.__casemap:
+                    description = self.__casemap[name_lower]
                 else:
-                    description = self.__rtranslate_freetext_ci[name]
+                    description = self.__rtranslate_freetext_ci[name_lower]
                 delall_ci(tags, 'TXXX:' + description)
                 tags.add(self.build_TXXX(encoding, description, values))
             elif name in self.__rtranslate_freetext:
@@ -527,18 +551,13 @@ class ID3File(File):
             try:
                 if name.startswith('performer:'):
                     role = name.split(':', 1)[1]
-                    for key, frame in tags.items():
-                        if frame.FrameID in ('TMCL', 'TIPL', 'IPLS'):
-                            for people in frame.people:
-                                if people[0] == role:
-                                    frame.people.remove(people)
-                elif name.startswith('comment:'):
+                    _remove_people_with_role(tags, ['TMCL', 'TIPL', 'IPLS'], role)
+                elif name.startswith('comment:') or name == 'comment':
                     (lang, desc) = parse_comment_tag(name)
-                    if desc.lower()[:4] != 'itun':
-                        for key, frame in list(tags.items()):
-                            if (frame.FrameID == 'COMM' and frame.desc == desc
-                                and frame.lang == lang):
-                                del tags[key]
+                    for key, frame in list(tags.items()):
+                        if (frame.FrameID == 'COMM' and frame.desc == desc
+                            and frame.lang == lang):
+                            del tags[key]
                 elif name.startswith('lyrics:') or name == 'lyrics':
                     if ':' in name:
                         desc = name.split(':', 1)[1]
@@ -549,30 +568,29 @@ class ID3File(File):
                             del tags[key]
                 elif name in self._rtipl_roles:
                     role = self._rtipl_roles[name]
-                    for key, frame in tags.items():
-                        if frame.FrameID in ('TIPL', 'IPLS'):
-                            for people in frame.people:
-                                if people[0] == role:
-                                    frame.people.remove(people)
+                    _remove_people_with_role(tags, ['TIPL', 'IPLS'], role)
                 elif name == 'musicbrainz_recordingid':
                     for key, frame in list(tags.items()):
                         if frame.FrameID == 'UFID' and frame.owner == 'http://musicbrainz.org':
                             del tags[key]
                 elif real_name == 'POPM':
+                    user_email = config.setting['rating_user_email']
                     for key, frame in list(tags.items()):
-                        if frame.FrameID == 'POPM' and frame.email == config.setting['rating_user_email']:
+                        if frame.FrameID == 'POPM' and frame.email == user_email:
                             del tags[key]
                 elif real_name in self.__translate:
                     del tags[real_name]
+                elif name.lower() in self.__rtranslate_freetext_ci:
+                    delall_ci(tags, 'TXXX:' + self.__rtranslate_freetext_ci[name.lower()])
                 elif real_name in self.__translate_freetext:
                     tags.delall('TXXX:' + real_name)
                     if real_name in self.__rrename_freetext:
                         tags.delall('TXXX:' + self.__rrename_freetext[real_name])
-                elif not name.startswith("~") and name not in self.__other_supported_tags:
+                elif not name.startswith("~id3:") and name not in self.__other_supported_tags:
                     tags.delall('TXXX:' + name)
-                elif name.startswith("~"):
-                    name = name[1:]
-                    tags.delall('TXXX:' + name)
+                elif name.startswith("~id3:"):
+                    frameid = name[5:]
+                    tags.delall(frameid)
                 elif name in self.__other_supported_tags:
                     del tags[real_name]
             except KeyError:
@@ -639,7 +657,6 @@ class ID3File(File):
             # ID3v23 can only save TDOR dates in YYYY format. Mutagen cannot
             # handle ID3v23 dates which are YYYY-MM rather than YYYY or
             # YYYY-MM-DD.
-
             if name == "originaldate":
                 values = [v[:4] for v in values]
             elif name == "date":
@@ -647,7 +664,6 @@ class ID3File(File):
 
             # If this is a multi-valued field, then it needs to be flattened,
             # unless it's TIPL or TMCL which can still be multi-valued.
-
             if (len(values) > 1 and name not in ID3File._rtipl_roles
                     and not name.startswith("performer:")):
                 values = [join_with.join(values)]

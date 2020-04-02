@@ -1,4 +1,27 @@
 # -*- coding: utf-8 -*-
+#
+# Picard, the next-generation MusicBrainz tagger
+#
+# Copyright (C) 2013-2014, 2018-2020 Laurent Monin
+# Copyright (C) 2017 Sambhav Kothari
+# Copyright (C) 2018 Wieland Hoffmann
+# Copyright (C) 2018-2020 Philipp Wolfer
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+
 import unittest
 
 from test.picardtestcase import PicardTestCase
@@ -18,7 +41,7 @@ from picard.version import (
 class VersionsTest(PicardTestCase):
 
     def test_version_conversion(self):
-        versions =  (
+        versions = (
             (Version(1, 1, 0, 'final', 0), '1.1.0.final0'),
             (Version(0, 0, 1, 'dev', 1), '0.0.1.dev1'),
             (Version(1, 1, 0, 'dev', 0), '1.1.0.dev0'),
@@ -36,7 +59,7 @@ class VersionsTest(PicardTestCase):
             self.assertEqual(v, version_from_string(s))
 
     def test_version_conversion_short(self):
-        versions =  (
+        versions = (
             (Version(1, 1, 0, 'final', 0), '1.1'),
             (Version(1, 1, 1, 'final', 0), '1.1.1'),
             (Version(0, 0, 1, 'dev', 1), '0.0.1.dev1'),
@@ -54,8 +77,8 @@ class VersionsTest(PicardTestCase):
             self.assertEqual(v, version_from_string(s))
 
     def test_version_to_string_invalid_identifier(self):
-        l = (1, 0, 2, 'xx', 0)
-        self.assertRaises(VersionError, version_to_string, (l))
+        invalid = (1, 0, 2, 'xx', 0)
+        self.assertRaises(VersionError, version_to_string, (invalid))
 
     def test_version_from_string_underscores(self):
         l, s = (1, 1, 0, 'dev', 0), '1_1_0_dev_0'
@@ -66,8 +89,8 @@ class VersionsTest(PicardTestCase):
         self.assertEqual(l, version_from_string(s))
 
     def test_version_from_string_invalid(self):
-        l = 'anything_28x_1_0_dev_0'
-        self.assertRaises(VersionError, version_to_string, (l))
+        invalid = 'anything_28x_1_0_dev_0'
+        self.assertRaises(VersionError, version_to_string, (invalid))
 
     def test_version_from_string_prefixed_final(self):
         l, s = (1, 1, 0, 'final', 0), 'anything_28_1_1_0'
@@ -115,6 +138,10 @@ class VersionsTest(PicardTestCase):
         v2 = Version(2, 3, 0, 'alpha', 1)
         self.assertLess(v1, v2)
         self.assertFalse(v2 < v2)
+
+        v1 = Version(2, 3, 0, 'final', 1)
+        v2 = Version(2, 10, 0, 'final', 1)
+        self.assertLess(v1, v2)
 
     def test_le(self):
         v1 = Version(2, 3, 0, 'dev', 1)

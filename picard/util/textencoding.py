@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
+#
 # Copyright (C) 2004 Robert Kaye
 # Copyright (C) 2006 Lukáš Lalinský
+# Copyright (C) 2014 Sophist-UK
+# Copyright (C) 2014, 2018 Laurent Monin
+# Copyright (C) 2017 Sambhav Kothari
+# Copyright (C) 2018-2019 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -17,6 +22,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 
 # This modules provides functionality for simplifying unicode strings.
 
@@ -170,6 +176,7 @@ _simplify_punctuation = {
     "\u226B": ">>",  # MUCH GREATER-THAN
     "\u2985": "((",  # LEFT WHITE PARENTHESIS
     "\u2986": "))",  # RIGHT WHITE PARENTHESIS
+    "\u2022": "-",  # BULLET
     "\u200B": "",  # Zero Width Space
 }
 

@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
+#
 # Copyright (C) 2011 Lukáš Lalinský
+# Copyright (C) 2017 Sambhav Kothari
+# Copyright (C) 2018 Laurent Monin
+# Copyright (C) 2018 Vishal Choudhary
+# Copyright (C) 2020 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -16,6 +21,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 
 from functools import partial
 
@@ -48,9 +54,7 @@ class AcoustIDManager(QtCore.QObject):
         self._acoustid_api = acoustid_api
 
     def add(self, file, recordingid):
-        if not hasattr(file, 'acoustid_fingerprint'):
-            return
-        if not hasattr(file, 'acoustid_length'):
+        if not file.acoustid_fingerprint or not file.acoustid_length:
             return
         puid = file.metadata['musicip_puid']
         self._fingerprints[file] = Submission(file.acoustid_fingerprint, file.acoustid_length, recordingid, recordingid, puid)

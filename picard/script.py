@@ -1,10 +1,24 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
-# Copyright (C) 2006-2007 Lukáš Lalinský
-# Copyright (C) 2007 Javier Kohen
-# Copyright (C) 2008 Philipp Wolfer
 #
+# Copyright (C) 2006-2009, 2012 Lukáš Lalinský
+# Copyright (C) 2007 Javier Kohen
+# Copyright (C) 2008-2011, 2014-2015, 2018-2020 Philipp Wolfer
+# Copyright (C) 2009 Carlin Mangar
+# Copyright (C) 2009 Nikolai Prokoschenko
+# Copyright (C) 2011-2012 Michael Wiencek
+# Copyright (C) 2012 Chad Wilson
+# Copyright (C) 2012 stephen
+# Copyright (C) 2012, 2014, 2017 Wieland Hoffmann
+# Copyright (C) 2013-2014, 2017-2020 Laurent Monin
+# Copyright (C) 2014, 2017 Sophist-UK
+# Copyright (C) 2016-2017 Sambhav Kothari
+# Copyright (C) 2016-2017 Ville Skyttä
+# Copyright (C) 2017-2018 Antonio Larrosa
+# Copyright (C) 2018 Calvin Walton
+# Copyright (C) 2018 virusMac
+# Copyright (C) 2020 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -20,11 +34,14 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+
 from collections import namedtuple
+from collections.abc import MutableSequence
 import datetime
 from functools import reduce
 from inspect import getfullargspec
 import operator
+from queue import LifoQueue
 import re
 import unicodedata
 
@@ -42,19 +59,66 @@ class ScriptError(Exception):
 
 
 class ScriptParseError(ScriptError):
-    pass
+    def __init__(self, stackitem, message):
+        super().__init__(
+            "{prefix:s}: {message:s}".format(
+                prefix=str(stackitem),
+                message=message
+            )
+        )
 
 
 class ScriptEndOfFile(ScriptParseError):
-    pass
+    def __init__(self, stackitem):
+        super().__init__(
+            stackitem,
+            "Unexpected end of script"
+        )
 
 
 class ScriptSyntaxError(ScriptParseError):
     pass
 
 
-class ScriptUnknownFunction(ScriptError):
-    pass
+class ScriptUnknownFunction(ScriptParseError):
+    def __init__(self, stackitem):
+        super().__init__(
+            stackitem,
+            "Unknown function '{name}'".format(name=stackitem.name)
+        )
+
+
+class ScriptRuntimeError(ScriptError):
+    def __init__(self, stackitem, message='Unknown error'):
+        super().__init__(
+            "{prefix:s}: {message:s}".format(
+                prefix=str(stackitem),
+                message=message
+            )
+        )
+
+
+class StackItem:
+    def __init__(self, line, column, name=None):
+        self.line = line
+        self.column = column
+        if name is None:
+            self.name = None
+        else:
+            self.name = '$' + name
+
+    def __str__(self):
+        if self.name is None:
+            return '{line:d}:{column:d}'.format(
+                line=self.line,
+                column=self.column
+            )
+        else:
+            return '{line:d}:{column:d}:{name}'.format(
+                line=self.line,
+                column=self.column,
+                name=self.name
+            )
 
 
 class ScriptText(str):
@@ -89,7 +153,8 @@ Bound = namedtuple("Bound", ["lower", "upper"])
 
 class ScriptFunction(object):
 
-    def __init__(self, name, args, parser):
+    def __init__(self, name, args, parser, column=0, line=0):
+        self.stackitem = StackItem(line, column, name)
         try:
             argnum_bound = parser.functions[name].argcount
             argcount = len(args)
@@ -106,12 +171,13 @@ class ScriptFunction(object):
                     too_many_args = False
 
                 if too_few_args or too_many_args:
-                    raise ScriptError(
-                        "Wrong number of arguments for $%s: Expected %s, got %i at position %i, line %i"
-                        % (name, expected, argcount, parser._x, parser._y)
+                    raise ScriptSyntaxError(
+                        self.stackitem,
+                        "Wrong number of arguments for $%s: Expected %s, got %i"
+                        % (name, expected, argcount)
                     )
         except KeyError:
-            raise ScriptUnknownFunction("Unknown function '%s'" % name)
+            raise ScriptUnknownFunction(self.stackitem)
 
         self.name = name
         self.args = args
@@ -123,13 +189,17 @@ class ScriptFunction(object):
         try:
             function, eval_args, num_args = parser.functions[self.name]
         except KeyError:
-            raise ScriptUnknownFunction("Unknown function '%s'" % self.name)
+            raise ScriptUnknownFunction(self.stackitem)
 
         if eval_args:
             args = [arg.eval(parser) for arg in self.args]
         else:
             args = self.args
-        return function(parser, *args)
+        parser._function_stack.put(self.stackitem)
+        # Save return value to allow removing function from the stack on successful completion
+        return_value = function(parser, *args)
+        parser._function_stack.get()
+        return return_value
 
 
 class ScriptExpression(list):
@@ -159,14 +229,14 @@ Grammar:
     _function_registry = ExtensionPoint(label='function_registry')
     _cache = {}
 
+    def __init__(self):
+        self._function_stack = LifoQueue()
+
     def __raise_eof(self):
-        raise ScriptEndOfFile("Unexpected end of script at position %d, line %d" % (self._x, self._y))
+        raise ScriptEndOfFile(StackItem(line=self._y, column=self._x))
 
     def __raise_char(self, ch):
-        #line = self._text[self._line:].split("\n", 1)[0]
-        #cursor = " " * (self._pos - self._line - 1) + "^"
-        #raise ScriptSyntaxError("Unexpected character '%s' at position %d, line %d\n%s\n%s" % (ch, self._x, self._y, line, cursor))
-        raise ScriptSyntaxError("Unexpected character '%s' at position %d, line %d" % (ch, self._x, self._y))
+        raise ScriptSyntaxError(StackItem(line=self._y, column=self._x), "Unexpected character '%s'" % ch)
 
     def read(self):
         try:
@@ -204,13 +274,15 @@ Grammar:
 
     def parse_function(self):
         start = self._pos
+        column = self._x - 2     # Set x position to start of function name ($)
+        line = self._y
         while True:
             ch = self.read()
             if ch == '(':
                 name = self._text[start:self._pos-1]
                 if name not in self.functions:
-                    raise ScriptUnknownFunction("Unknown function '%s'" % name)
-                return ScriptFunction(name, self.parse_arguments(), self)
+                    raise ScriptUnknownFunction(StackItem(line, column, name))
+                return ScriptFunction(name, self.parse_arguments(), self, column, line)
             elif ch is None:
                 self.__raise_eof()
             elif not isidentif(ch):
@@ -299,6 +371,51 @@ Grammar:
         return ScriptParser._cache[key].eval(self)
 
 
+class MultiValue(MutableSequence):
+    def __init__(self, parser, multi, separator):
+        self.parser = parser
+        if isinstance(separator, ScriptExpression):
+            self.separator = separator.eval(self.parser)
+        else:
+            self.separator = separator
+        if (self.separator == MULTI_VALUED_JOINER
+            and len(multi) == 1
+            and isinstance(multi[0], ScriptVariable)):
+            # Convert ScriptExpression containing only a single variable into variable
+            self._multi = self.parser.context.getall(normalize_tagname(multi[0].name))
+        else:
+            # Fall-back to converting to a string and splitting if haystack is an expression
+            # or user has overridden the separator character.
+            evaluated_multi = multi.eval(self.parser)
+            if not evaluated_multi:
+                self._multi = []
+            elif self.separator:
+                self._multi = evaluated_multi.split(self.separator)
+            else:
+                self._multi = [evaluated_multi]
+
+    def __len__(self):
+        return len(self._multi)
+
+    def __getitem__(self, key):
+        return self._multi[key]
+
+    def __setitem__(self, key, value):
+        self._multi[key] = value
+
+    def __delitem__(self, key):
+        del self._multi[key]
+
+    def insert(self, index, value):
+        return self._multi.insert(index, value)
+
+    def __repr__(self):
+        return '%s(%r, %r, %r)' % (self.__class__.__name__, self.parser, self._multi, self.separator)
+
+    def __str__(self):
+        return self.separator.join(self)
+
+
 def enabled_tagger_scripts_texts():
     """Returns an iterator over the enabled tagger scripts.
     For each script, you'll get a tuple consisting of the script name and text"""
@@ -370,27 +487,6 @@ def _compute_int(operation, *args):
 
 def _compute_logic(operation, *args):
     return operation(args)
-
-
-def _get_multi_values(parser, multi, separator):
-    if isinstance(separator, ScriptExpression):
-        separator = separator.eval(parser)
-
-    if separator == MULTI_VALUED_JOINER:
-        # Convert ScriptExpression containing only a single variable into variable
-        if (isinstance(multi, ScriptExpression)
-            and len(multi) == 1
-            and isinstance(multi[0], ScriptVariable)):
-            multi = multi[0]
-
-        # If a variable, return multi-values
-        if isinstance(multi, ScriptVariable):
-            return parser.context.getall(normalize_tagname(multi.name))
-
-    # Fall-back to converting to a string and splitting if haystack is an expression
-    # or user has overridden the separator character.
-    multi = multi.eval(parser)
-    return multi.split(separator) if separator else [multi]
 
 
 @script_function(eval_args=False)
@@ -483,7 +579,7 @@ def func_inmulti(parser, haystack, needle, separator=MULTI_VALUED_JOINER):
        contains exactly ``needle`` as a member."""
 
     needle = needle.eval(parser)
-    return func_in(parser, _get_multi_values(parser, haystack, separator), needle)
+    return func_in(parser, MultiValue(parser, haystack, separator), needle)
 
 
 @script_function()
@@ -511,7 +607,7 @@ def func_rsearch(parser, text, pattern):
 @script_function()
 def func_num(parser, text, length):
     try:
-        format_ = "%%0%dd" % min(int(length), 20)
+        format_ = "%%0%dd" % max(0, min(int(length), 20))
     except ValueError:
         return ""
     try:
@@ -637,6 +733,8 @@ def func_div(parser, x, y, *args):
         return _compute_int(operator.floordiv, x, y, *args)
     except ValueError:
         return ""
+    except ZeroDivisionError:
+        return ""
 
 
 @script_function()
@@ -647,7 +745,7 @@ def func_mod(parser, x, y, *args):
     """
     try:
         return _compute_int(operator.mod, x, y, *args)
-    except ValueError:
+    except (ValueError, ZeroDivisionError):
         return ""
 
 
@@ -765,7 +863,7 @@ def func_len(parser, text=""):
 
 @script_function(eval_args=False)
 def func_lenmulti(parser, multi, separator=MULTI_VALUED_JOINER):
-    return func_len(parser, _get_multi_values(parser, multi, separator))
+    return str(len(MultiValue(parser, multi, separator)))
 
 
 @script_function()
@@ -821,9 +919,12 @@ def func_firstwords(parser, text, length):
     if len(text) <= length:
         return text
     else:
-        if text[length] == ' ':
-            return text[:length]
-        return text[:length].rsplit(' ', 1)[0]
+        try:
+            if text[length] == ' ':
+                return text[:length]
+            return text[:length].rsplit(' ', 1)[0]
+        except IndexError:
+            return ''
 
 
 @script_function()
@@ -947,8 +1048,6 @@ def func_title(parser, text):
     like: from "Lost in the Supermarket" to "Lost In The Supermarket"
     Example: $set(album,$title(%album%))
     """
-    if not text:
-        return ""
     capitalized = text[0].capitalize()
     capital = False
     for i in range(1, len(text)):
@@ -1002,9 +1101,12 @@ def func_find(parser, haystack, needle):
         needle: The substring to find.
 
     Returns:
-        The zero-based index of the first occurrance of needle in haystack, or -1 if needle was not found.
+        The zero-based index of the first occurrence of needle in haystack, or "" if needle was not found.
     """
-    return str(haystack.find(needle))
+    index = haystack.find(needle)
+    if index < 0:
+        return ''
+    return str(index)
 
 
 @script_function()
@@ -1068,8 +1170,8 @@ def func_getmulti(parser, multi, item_index, separator=MULTI_VALUED_JOINER):
         return ''
     try:
         index = int(item_index.eval(parser))
-        multi_var = _get_multi_values(parser, multi, separator)
-        return str(multi_var[index])
+        multi_value = MultiValue(parser, multi, separator)
+        return str(multi_value[index])
     except (ValueError, IndexError):
         return ''
 
@@ -1089,7 +1191,7 @@ def func_foreach(parser, multi, loop_code, separator=MULTI_VALUED_JOINER):
         loop_code: String of script code to be processed on each iteration.
         separator: String used to separate the elements in the multi-value.
     """
-    multi_value = _get_multi_values(parser, multi, separator)
+    multi_value = MultiValue(parser, multi, separator)
     for loop_count, value in enumerate(multi_value, 1):
         func_set(parser, '_loop_count', str(loop_count))
         func_set(parser, '_loop_value', str(value))
@@ -1137,16 +1239,14 @@ def func_map(parser, multi, loop_code, separator=MULTI_VALUED_JOINER):
 
     Returns the updated multi-value variable.
     """
-    multi_value = _get_multi_values(parser, multi, separator)
+    multi_value = MultiValue(parser, multi, separator)
     for loop_count, value in enumerate(multi_value, 1):
         func_set(parser, '_loop_count', str(loop_count))
         func_set(parser, '_loop_value', str(value))
         multi_value[loop_count - 1] = str(loop_code.eval(parser))
     func_unset(parser, '_loop_count')
     func_unset(parser, '_loop_value')
-    if not isinstance(separator, str):
-        separator = separator.eval(parser)
-    return separator.join(multi_value)
+    return str(multi_value)
 
 
 @script_function(eval_args=False)
@@ -1165,7 +1265,7 @@ def func_join(parser, multi, join_phrase, separator=MULTI_VALUED_JOINER):
     Returns a string with the elements joined.
     """
     join_phrase = str(join_phrase.eval(parser))
-    multi_value = _get_multi_values(parser, multi, separator)
+    multi_value = MultiValue(parser, multi, separator)
     return join_phrase.join(multi_value)
 
 
@@ -1195,10 +1295,8 @@ def func_slice(parser, multi, start_index, end_index, separator=MULTI_VALUED_JOI
         end = int(end_index.eval(parser)) if end_index else None
     except ValueError:
         end = None
-    multi_var = _get_multi_values(parser, multi, separator)
-    if not isinstance(separator, str):
-        separator = separator.eval(parser)
-    return separator.join(multi_var[start:end])
+    multi_value = MultiValue(parser, multi, separator)
+    return multi_value.separator.join(multi_value[start:end])
 
 
 @script_function()
@@ -1222,5 +1320,42 @@ def func_datetime(parser, format=None):
     # Handle case where format evaluates to ''
     if not format:
         format = '%Y-%m-%d %H:%M:%S'
+    try:
+        return datetime.datetime.now(tz=local_tz).strftime(format)
+    except ValueError:
+        stackitem = parser._function_stack.get()
+        raise ScriptRuntimeError(stackitem, "Unsupported format code")
 
-    return datetime.datetime.now(tz=local_tz).strftime(format)
+
+@script_function(eval_args=False)
+def func_sortmulti(parser, multi, separator=MULTI_VALUED_JOINER):
+    """Returns the supplied multi-value sorted in ascending order.
+
+        parser: The ScriptParser object used to parse the script.
+        multi: The ScriptVariable/Function that evaluates to a multi-value to be
+            sorted.
+        separator: A string or the ScriptVariable/Function that evaluates to the
+            string used to separate the elements in the multi-value.
+
+    Returns:
+        Returns the supplied multi-value sorted in ascending order.
+    """
+    multi_value = MultiValue(parser, multi, separator)
+    return multi_value.separator.join(sorted(multi_value))
+
+
+@script_function(eval_args=False)
+def func_reversemulti(parser, multi, separator=MULTI_VALUED_JOINER):
+    """Returns the supplied multi-value in reverse order.
+
+        parser: The ScriptParser object used to parse the script.
+        multi: The ScriptVariable/Function that evaluates to a multi-value to be
+            reversed.
+        separator: A string or the ScriptVariable/Function that evaluates to the
+            string used to separate the elements in the multi-value.
+
+    Returns:
+        Returns the supplied multi-value in reverse order.
+    """
+    multi_value = MultiValue(parser, multi, separator)
+    return multi_value.separator.join(reversed(multi_value))

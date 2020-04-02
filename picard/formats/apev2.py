@@ -1,7 +1,15 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
-# Copyright (C) 2006 Lukáš Lalinský
+#
+# Copyright (C) 2006-2009, 2011 Lukáš Lalinský
+# Copyright (C) 2009-2011, 2018-2020 Philipp Wolfer
+# Copyright (C) 2011-2014 Wieland Hoffmann
+# Copyright (C) 2012-2013 Michael Wiencek
+# Copyright (C) 2013 Calvin Walton
+# Copyright (C) 2013-2015, 2018-2019 Laurent Monin
+# Copyright (C) 2016-2018 Sambhav Kothari
+# Copyright (C) 2017 Ville Skyttä
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -16,6 +24,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 
 from __future__ import absolute_import
 
@@ -160,7 +169,7 @@ class APEv2File(File):
                         if len(disc) > 1:
                             metadata["totaldiscs"] = disc[1]
                             value = disc[0]
-                    elif name == 'performer' or name == 'comment':
+                    elif name in ('performer', 'comment'):
                         if value.endswith(')'):
                             start = value.rfind(' (')
                             if start > 0:
@@ -227,14 +236,17 @@ class APEv2File(File):
         """Remove the tags from the file that were deleted in the UI"""
         for tag in metadata.deleted_tags:
             real_name = self._get_tag_name(tag)
-            if (real_name in ('Lyrics', 'Comment', 'Performer')
-                and ':' in tag and not tag.endswith(':')):
-                tag_type = re.compile(r"\(%s\)$" % tag.split(':', 1)[1])
-                existing_tags = tags.get(real_name)
-                if existing_tags:
-                    for item in existing_tags:
-                        if tag_type.search(item):
-                            tags.get(real_name).remove(item)
+            if real_name in ('Lyrics', 'Comment', 'Performer'):
+                parts = tag.split(':', 1)
+                if len(parts) == 2:
+                    tag_type_regex = re.compile(r"\(%s\)$" % re.escape(parts[1]))
+                else:
+                    tag_type_regex = re.compile(r"[^)]$")
+                existing_tags = tags.get(real_name, [])
+                for item in existing_tags:
+                    if re.search(tag_type_regex, item):
+                        existing_tags.remove(item)
+                tags[real_name] = existing_tags
             elif tag in ('totaltracks', 'totaldiscs'):
                 tagstr = real_name.lower() + 'number'
                 if tagstr in metadata:

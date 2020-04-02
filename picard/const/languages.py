@@ -3,6 +3,10 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2007 Lukáš Lalinský
+# Copyright (C) 2014, 2018, 2020 Laurent Monin
+# Copyright (C) 2017 Sambhav Kothari
+# Copyright (C) 2018 Shen-Ta Hsieh
+# Copyright (C) 2018-2020 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -30,6 +34,7 @@ UI_LANGUAGES = [
     #('cy', 'Cymraeg', N_('Welsh')),
     ('da', 'Dansk', N_('Danish')),
     ('de', 'Deutsch', N_('German')),
+    ('de_CH', 'Deutsch (Schweiz)', N_('German (Switzerland)')),
     ('el', 'ελληνικά', N_('Greek')),
     ('en', 'English', N_('English')),
     ('en_AU', 'English (Australia)', N_('English (Australia)')),
@@ -37,7 +42,7 @@ UI_LANGUAGES = [
     ('en_GB', 'English (UK)', N_('English (UK)')),
     #('eo', 'Esperanto', N_('Esperanto')),
     ('es', 'Español', N_('Spanish')),
-    ('et', 'Eesti keel', N_('Estonian')),
+    ('et', 'Eesti', N_('Estonian')),
     #('fa', 'فارسی', N_('Persian')),
     ('fi', 'Suomi', N_('Finnish')),
     #('fo', 'Føroyskt', N_('Faroese')),
@@ -47,7 +52,7 @@ UI_LANGUAGES = [
     ('gl', 'Galego', N_('Galician')),
     ('he', 'עברית', N_('Hebrew')),
     #('hi', 'हिन्दी', N_('Hindi')),
-    #('hu', 'Magyar', N_('Hungarian')),
+    ('hu', 'Magyar', N_('Hungarian')),
     #('id', 'Bahasa Indonesia', N_('Indonesian')),
     ('is', 'Íslenska', N_('Icelandic')),
     ('it', 'Italiano', N_('Italian')),
@@ -55,6 +60,7 @@ UI_LANGUAGES = [
     #('kn', 'ಕನ್ನಡ', N_('Kannada')),
     ('ko', '한국어', N_('Korean')),
     #('lt', 'Lietuvių', N_('Lithuanian')),
+    ('ms_MY', 'Bahasa Melayu (Malaysia)', N_('Malay (Malaysia)')),
     ('nb', 'Norsk bokmål', N_('Norwegian Bokmål')),
     #('nds', 'Plattdüütsch', N_('Low German')),
     ('nl', 'Nederlands', N_('Dutch')),

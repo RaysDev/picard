@@ -1,7 +1,32 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
-# Copyright (C) 2006 Lukáš Lalinský
+#
+# Copyright (C) 2006-2008, 2011-2012, 2014 Lukáš Lalinský
+# Copyright (C) 2007 Nikolai Prokoschenko
+# Copyright (C) 2008 Gary van der Merwe
+# Copyright (C) 2008 Robert Kaye
+# Copyright (C) 2008 Will
+# Copyright (C) 2008-2010, 2015, 2018-2020 Philipp Wolfer
+# Copyright (C) 2009 Carlin Mangar
+# Copyright (C) 2009 David Hilton
+# Copyright (C) 2011-2012 Chad Wilson
+# Copyright (C) 2011-2013, 2015-2017 Wieland Hoffmann
+# Copyright (C) 2011-2014 Michael Wiencek
+# Copyright (C) 2013-2014, 2017 Sophist-UK
+# Copyright (C) 2013-2020 Laurent Monin
+# Copyright (C) 2015 Ohm Patel
+# Copyright (C) 2015 samithaj
+# Copyright (C) 2016 Rahul Raturi
+# Copyright (C) 2016 Simon Legner
+# Copyright (C) 2016-2017 Sambhav Kothari
+# Copyright (C) 2017 Antonio Larrosa
+# Copyright (C) 2017 Frederik “Freso” S. Olesen
+# Copyright (C) 2018 Bob Swift
+# Copyright (C) 2018 Kartik Ohri
+# Copyright (C) 2018 Vishal Choudhary
+# Copyright (C) 2018 virusMac
+# Copyright (C) 2019 Timur Enikeev
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -16,6 +41,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 
 from collections import OrderedDict
 import datetime
@@ -440,7 +466,6 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
 
         self.remove_action = QtWidgets.QAction(icontheme.lookup('list-remove'), _("&Remove"), self)
         self.remove_action.setStatusTip(_("Remove selected files/albums"))
-        self.remove_action.setShortcut(QtGui.QKeySequence.Delete)
         self.remove_action.setEnabled(False)
         self.remove_action.triggered.connect(self.remove)
 
@@ -509,7 +534,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         self.generate_fingerprints_action.setStatusTip(_("Generate the AcoustID audio fingerprints for the selected files without doing a lookup"))
         self.generate_fingerprints_action.setEnabled(False)
         self.generate_fingerprints_action.setToolTip(_('Generate the AcoustID audio fingerprints for the selected files'))
-        self.generate_fingerprints_action.setShortcut(QtGui.QKeySequence(_("Ctrl+Alt+F")))
+        self.generate_fingerprints_action.setShortcut(QtGui.QKeySequence(_("Ctrl+Shift+Y")))
         self.generate_fingerprints_action.triggered.connect(self.generate_fingerprints)
 
         self.cluster_action = QtWidgets.QAction(icontheme.lookup('picard-cluster'), _("Cl&uster"), self)

@@ -1,8 +1,25 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
+#
 # Copyright (C) 2004 Robert Kaye
-# Copyright (C) 2006 Lukáš Lalinský
+# Copyright (C) 2006-2009, 2011-2012, 2014 Lukáš Lalinský
+# Copyright (C) 2008-2011, 2014, 2018-2020 Philipp Wolfer
+# Copyright (C) 2009 Carlin Mangar
+# Copyright (C) 2009 david
+# Copyright (C) 2010 fatih
+# Copyright (C) 2011-2013 Michael Wiencek
+# Copyright (C) 2012, 2014-2015 Wieland Hoffmann
+# Copyright (C) 2013 Ionuț Ciocîrlan
+# Copyright (C) 2013-2014 Sophist-UK
+# Copyright (C) 2013-2014, 2018-2020 Laurent Monin
+# Copyright (C) 2014 Johannes Dewender
+# Copyright (C) 2016 Rahul Raturi
+# Copyright (C) 2016 barami
+# Copyright (C) 2016-2018 Sambhav Kothari
+# Copyright (C) 2017 Frederik “Freso” S. Olesen
+# Copyright (C) 2018 Bob Swift
+# Copyright (C) 2018 Vishal Choudhary
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -17,6 +34,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+
 import builtins
 from collections import namedtuple
 import html
@@ -390,13 +409,10 @@ def album_artist_from_path(filename, album, artist):
     """
     if not album:
         dirs = os.path.dirname(filename).replace('\\', '/').lstrip('/').split('/')
-        if len(dirs) == 0:
-            return album, artist
         # Strip disc subdirectory from list
-        if len(dirs) > 0:
-            if re.search(r'(^|\s)(CD|DVD|Disc)\s*\d+(\s|$)', dirs[-1], re.I):
-                del dirs[-1]
-        if len(dirs) > 0:
+        if re.search(r'\b(?:CD|DVD|Disc)\s*\d+\b', dirs[-1], re.I):
+            del dirs[-1]
+        if dirs:
             # For clustering assume %artist%/%album%/file or %artist% - %album%/file
             album = dirs[-1]
             if ' - ' in album:
@@ -593,3 +609,39 @@ def get_qt_enum(cls, enum):
         if isinstance(value, enum):
             values.append(key)
     return values
+
+
+def limited_join(a_list, limit, join_string='+', middle_string='…'):
+    """Join elements of a list with `join_string`
+    If list is longer than `limit`, middle elements will be dropped,
+    and replaced by `middle_string`.
+
+    Args:
+        a_list: list of strings to join
+        limit: maximum number of elements to join before limiting
+        join_string: string used to join elements
+        middle_string: string to insert in the middle if limited
+
+    Returns:
+        A string
+
+    Example:
+        >>> limited_join(['a', 'b', 'c', 'd', 'e', 'f'], 2)
+        'a+…+f'
+        >>> limited_join(['a', 'b', 'c', 'd', 'e', 'f'], 3)
+        'a+…+f'
+        >>> limited_join(['a', 'b', 'c', 'd', 'e', 'f'], 4)
+        'a+b+…+e+f'
+        >>> limited_join(['a', 'b', 'c', 'd', 'e', 'f'], 6)
+        'a+b+c+d+e+f'
+        >>> limited_join(['a', 'b', 'c', 'd', 'e', 'f'], 2, ',', '?')
+        'a,?,f'
+    """
+    length = len(a_list)
+    if limit <= 1 or limit >= length:
+        return join_string.join(a_list)
+
+    half = limit // 2
+    start = a_list[:half]
+    end = a_list[-half:]
+    return join_string.join(start + [middle_string] + end)

@@ -1,4 +1,25 @@
 # -*- coding: utf-8 -*-
+#
+# Picard, the next-generation MusicBrainz tagger
+#
+# Copyright (C) 2018-2019 Philipp Wolfer
+# Copyright (C) 2018-2019 Wieland Hoffmann
+# Copyright (C) 2018-2020 Laurent Monin
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 
 from test.picardtestcase import (
     PicardTestCase,
@@ -321,30 +342,29 @@ class ImageListTest(PicardTestCase):
         self.assertEqual(len(self.imagelist), 1)
 
     def test_imagelist_insert(self):
-        l = ImageList()
-        l.insert(0, 'a')
-        self.assertEqual(l[0], 'a')
-        l.insert(0, 'b')
-        self.assertEqual(l[0], 'b')
-        self.assertEqual(l[1], 'a')
+        imagelist = ImageList()
+        imagelist.insert(0, 'a')
+        self.assertEqual(imagelist[0], 'a')
+        imagelist.insert(0, 'b')
+        self.assertEqual(imagelist[0], 'b')
+        self.assertEqual(imagelist[1], 'a')
 
     def test_imagelist_clear(self):
-        l = ImageList(['a', 'b'])
-        self.assertEqual(len(l), 2)
-        l.clear()
-        self.assertEqual(len(l), 0)
+        imagelist = ImageList(['a', 'b'])
+        self.assertEqual(len(imagelist), 2)
+        imagelist.clear()
+        self.assertEqual(len(imagelist), 0)
 
     def test_imagelist_copy(self):
-        l = ['a', 'b']
-        l1 = ImageList(l)
-        l2 = l1.copy()
-        l3 = l1
-        l1[0] = 'c'
-        self.assertEqual(l2[0], 'a')
-        self.assertEqual(l3[0], 'c')
+        imagelist1 = ImageList(['a', 'b'])
+        imagelist2 = imagelist1.copy()
+        imagelist3 = imagelist1
+        imagelist1[0] = 'c'
+        self.assertEqual(imagelist2[0], 'a')
+        self.assertEqual(imagelist3[0], 'c')
 
     def test_imagelist_del(self):
-        l = ImageList(['a', 'b'])
-        del l[0]
-        self.assertEqual(l[0], 'b')
-        self.assertEqual(len(l), 1)
+        imagelist = ImageList(['a', 'b'])
+        del imagelist[0]
+        self.assertEqual(imagelist[0], 'b')
+        self.assertEqual(len(imagelist), 1)

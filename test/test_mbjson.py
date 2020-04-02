@@ -1,3 +1,27 @@
+# -*- coding: utf-8 -*-
+#
+# Picard, the next-generation MusicBrainz tagger
+#
+# Copyright (C) 2017 Sambhav Kothari
+# Copyright (C) 2017, 2019 Laurent Monin
+# Copyright (C) 2018 Wieland Hoffmann
+# Copyright (C) 2018-2020 Philipp Wolfer
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+
 from test.picardtestcase import (
     PicardTestCase,
     load_test_json,
@@ -28,6 +52,7 @@ settings = {
     "standardize_releases": False,
     "translate_artist_names": True,
     "standardize_instruments": True,
+    "preferred_release_countries": [],
     "artist_locale": 'en'
 }
 
@@ -66,6 +91,7 @@ class ReleaseTest(MBJSONTest):
         self.assertEqual(m['~albumartists'], 'Pink Floyd')
         self.assertEqual(m['~albumartists_sort'], 'Pink Floyd')
         self.assertEqual(m['~releaselanguage'], 'eng')
+        self.assertEqual(m.getall('~releasecountries'), ['GB', 'NZ'])
         self.assertEqual(a.genres, {
             'genre1': 6, 'genre2': 3,
             'tag1': 6, 'tag2': 3})
@@ -73,6 +99,18 @@ class ReleaseTest(MBJSONTest):
             self.assertEqual(artist.genres, {
                 'british': 2,
                 'progressive rock': 10})
+
+    def test_preferred_release_country(self):
+        m = Metadata()
+        a = Album("1")
+        release_to_metadata(self.json_doc, m, a)
+        self.assertEqual(m['releasecountry'], 'GB')
+        config.setting['preferred_release_countries'] = ['NZ', 'GB']
+        release_to_metadata(self.json_doc, m, a)
+        self.assertEqual(m['releasecountry'], 'NZ')
+        config.setting['preferred_release_countries'] = ['GB', 'NZ']
+        release_to_metadata(self.json_doc, m, a)
+        self.assertEqual(m['releasecountry'], 'GB')
 
     def test_media_formats_from_node(self):
         formats = media_formats_from_node(self.json_doc['media'])
